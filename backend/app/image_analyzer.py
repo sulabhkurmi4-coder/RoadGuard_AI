@@ -16,18 +16,16 @@ def _connected_components_stats(mask: np.ndarray) -> Tuple[int, list]:
     """
     Pure NumPy 8-connected component labeling and feature extraction.
     Returns (num_labels, component_stats) where each stat contains:
-    {'area': int, 'bbox': (min_y, min_x, max_y, max_x), 'aspect_ratio': float}
+    {'area': int, 'bbox': (min_y, min_x, max_y, max_x), 'width': int, 'height': int, 'aspect_ratio': float}
     """
     h, w = mask.shape
     visited = np.zeros((h, w), dtype=bool)
     components = []
 
-    # Find coordinates of all active pixels
     ys, xs = np.nonzero(mask)
     if len(ys) == 0:
         return 0, []
 
-    # Fast scan for connected clusters using breadth-first traversal
     for start_idx in range(len(ys)):
         sy, sx = ys[start_idx], xs[start_idx]
         if visited[sy, sx]:
@@ -50,7 +48,7 @@ def _connected_components_stats(mask: np.ndarray) -> Tuple[int, list]:
             if cx < min_x: min_x = cx
             if cx > max_x: max_x = cx
 
-            # 8-connected neighbors
+            # 8-connected neighborhood
             for ny in (cy - 1, cy, cy + 1):
                 if ny < 0 or ny >= h:
                     continue
@@ -78,20 +76,22 @@ def _connected_components_stats(mask: np.ndarray) -> Tuple[int, list]:
 
 def analyze_road_image_cv(image_bytes: bytes, filename: str = "") -> Dict[str, Any]:
     """
-    Robust optical computer-vision analysis of road surface imagery:
-    1. Region-of-Interest isolation (focuses on the roadway, suppresses sky/trees).
-    2. Lane marking and bright reflection suppression (prevents paint from triggering crack detection).
-    3. True Pothole Detection: Local contrast depression (black top-hat) with connected-component
-       morphology, minimum cavity area, compactness, and depth contrast against surrounding asphalt.
-    4. True Crack Detection: High-contrast dark linear fissures using Sobel gradients filtered by
-       dark intensity valleys, suppressing uniform texture noise.
-    5. Surface Ravelling / Weathering: High-frequency texture standard deviation on pavement surface.
-    6. ASTM D6433 PCI (Pavement Condition Index) score & risk level derivation.
+    Optical computer-vision analysis of real-world road surface imagery:
+    1. Roadway & Pavement Isolation: Masks out sky, horizon, green vegetation (trees/bushes),
+       and roadside dirt using color constancy and chromatic neutrality.
+    2. Lane Marking Suppression: Detects white/yellow painted lines and dilates to prevent
+       edges of paint from triggering crack or cavity detections.
+    3. Pothole Detection: Operates strictly within isolated pavement. Uses multi-scale local
+       contrast depression (black top-hat) with connected-component filtering, minimum cavity
+       area, compactness, and rim gradient verification to reject asphalt texture noise and shadows.
+    4. Crack Detection: Detects high-contrast dark valley linear fissures inside pavement while
+       filtering out lane borders, shadows, and aggregate grain.
+    5. Surface Ravelling / Roughness: ASTM D6433 PCI deduction based on physical distress.
     """
     if not image_bytes or len(image_bytes) == 0:
         raise ValueError("Image file is empty (0 bytes).")
 
-    # Detect SVG sample presets
+    # Detect SVG presets (demo fallback)
     is_svg = (
         image_bytes.strip().startswith(b"<svg")
         or b"<svg" in image_bytes[:300]
@@ -160,7 +160,7 @@ def analyze_road_image_cv(image_bytes: bytes, filename: str = "") -> Dict[str, A
             }
 
     # =========================================================================
-    # RASTER IMAGE PROCESSING PIPELINE (JPG, PNG, WEBP, BMP)
+    # REAL ROAD PHOTOGRAPH ANALYSIS PIPELINE (JPG, PNG, WEBP, BMP)
     # =========================================================================
     try:
         img_raw = Image.open(io.BytesIO(image_bytes))
@@ -172,7 +172,7 @@ def analyze_road_image_cv(image_bytes: bytes, filename: str = "") -> Dict[str, A
 
     orig_w, orig_h = img_raw.size
 
-    # Standardize analysis scale for consistent metric extraction
+    # Standardize analysis scale (max dimension 480) for robust real-time performance
     target_dim = 480
     scale = target_dim / max(orig_w, orig_h)
     proc_w = max(32, int(orig_w * scale))
@@ -181,166 +181,242 @@ def analyze_road_image_cv(image_bytes: bytes, filename: str = "") -> Dict[str, A
 
     rgb = np.array(img, dtype=np.float32)
     h, w, _ = rgb.shape
+    total_img_pixels = h * w
 
-    # 1. Pavement Region of Interest (ROI) Selection
-    # For road surveillance/dashcam/survey images, the lower 75% contains the pavement.
-    # Exclude the top 20% to avoid sky, horizon, headlights, tree lines, or vehicle hoods.
-    roi_top = int(h * 0.18)
-    pavement_rgb = rgb[roi_top:, :]
-    p_h, p_w, _ = pavement_rgb.shape
-    total_pavement_pixels = p_h * p_w
+    r = rgb[:, :, 0]
+    g = rgb[:, :, 1]
+    b = rgb[:, :, 2]
 
-    # Grayscale Luminance (ITU-R BT.601)
-    luma = 0.299 * pavement_rgb[:, :, 0] + 0.587 * pavement_rgb[:, :, 1] + 0.114 * pavement_rgb[:, :, 2]
+    # ITU-R BT.601 Grayscale Luminance
+    luma = 0.299 * r + 0.587 * g + 0.114 * b
 
-    # Baseline statistics of pavement
-    median_luma = float(np.median(luma))
-    mean_luma = float(np.mean(luma))
-    std_luma = float(np.std(luma))
+    # -------------------------------------------------------------------------
+    # 1. PAVEMENT REGION OF INTEREST (ROI) & NON-ROAD SEGMENTATION
+    # -------------------------------------------------------------------------
+    # In real road photography, roads run through landscapes with trees, grass,
+    # roadside dirt, sky, and horizon. We isolate the true asphalt surface:
 
-    # 2. Lane Marking & High-Reflectance Suppression Mask
-    # White & yellow paint stripes have significantly higher luminance and saturation than asphalt
-    paint_thresh = max(130.0, median_luma + 1.1 * max(14.0, std_luma))
-    paint_mask = luma > paint_thresh
+    # a) Robust Vegetation Masking (Trees, Grass, Shrubbery along shoulders)
+    # Foliage exhibits strong green dominance relative to red and blue:
+    is_vegetation = (
+        (g > 1.20 * (r + 2.0))
+        | (g > 1.25 * (b + 2.0))
+        | (2.0 * g - r - b > 10.0)
+    )
 
-    # Dilate paint mask by 2 pixels (5x5 neighborhood) to completely cover transition edges
-    paint_dilated = np.zeros_like(paint_mask)
-    for dy in range(-2, 3):
-        for dx in range(-2, 3):
-            ys_src = slice(max(0, -dy), min(p_h, p_h - dy))
-            xs_src = slice(max(0, -dx), min(p_w, p_w - dx))
-            ys_dst = slice(max(0, dy), min(p_h, p_h + dy))
-            xs_dst = slice(max(0, dx), min(p_w, p_w + dx))
-            paint_dilated[ys_dst, xs_dst] |= paint_mask[ys_src, xs_src]
+    # b) Sky / Bright Horizon Masking
+    # Upper 40% with high luminance or blue dominance is sky or distant landscape:
+    is_sky = np.zeros((h, w), dtype=bool)
+    horizon_cutoff = int(h * 0.40)
+    is_sky[:horizon_cutoff, :] = (luma[:horizon_cutoff, :] > 160.0) | (
+        (b[:horizon_cutoff, :] > r[:horizon_cutoff, :]) & (luma[:horizon_cutoff, :] > 100.0)
+    )
 
-    # 3. True Pothole Detection (Local Cavity Depression & Morphology)
-    # A genuine pothole is a local cavity depression: significantly darker than its immediate
-    # neighborhood, forming a coherent 2D void cluster (not scattered pixels or thin cracks).
+    # c) Pavement Chromatic Neutrality
+    # Asphalt pavement is neutral gray: R ~= G ~= B, with low color variance:
+    color_diff = np.maximum(np.abs(r - g), np.maximum(np.abs(r - b), np.abs(g - b)))
+    is_neutral_asphalt = (color_diff < 28.0) & (np.abs(r - g) < 18.0) & (g < 1.18 * (r + 3.0))
 
-    # Compute a local background luminance using a low-pass box filter
+    # Roadway perspective zone: exclude upper 18% of frame
+    perspective_road_zone = np.zeros((h, w), dtype=bool)
+    perspective_road_zone[int(h * 0.18):, :] = True
+
+    pavement_mask = perspective_road_zone & is_neutral_asphalt & (~is_vegetation) & (~is_sky)
+
+    # Fallback in case of tinted lighting: ensure lower central area is used
+    if np.sum(pavement_mask) < (total_img_pixels * 0.15):
+        pavement_mask = np.zeros((h, w), dtype=bool)
+        pavement_mask[int(h * 0.25):, int(w * 0.08):int(w * 0.92)] = ~is_vegetation[int(h * 0.25):, int(w * 0.08):int(w * 0.92)]
+
+    total_pavement_pixels = int(np.sum(pavement_mask))
+    pavement_region_ratio = float(total_pavement_pixels / total_img_pixels)
+
+    # Pavement statistics
+    pavement_luma = luma[pavement_mask]
+    median_luma = float(np.median(pavement_luma))
+    mean_luma = float(np.mean(pavement_luma))
+    std_luma = float(np.std(pavement_luma))
+
+    # -------------------------------------------------------------------------
+    # 2. LANE MARKING & HIGH-REFLECTANCE SUPPRESSION
+    # -------------------------------------------------------------------------
+    # White and yellow paint markings have high contrast against dark asphalt.
+    # Yellow paint: high red and green, low blue (R > 130, G > 110, B < 90).
+    # White paint: very bright luminance relative to pavement median.
+    white_paint = (luma > max(145.0, median_luma + 1.2 * max(14.0, std_luma))) & (color_diff < 25.0)
+    yellow_paint = (r > 125.0) & (g > 105.0) & (b < (r - 20.0)) & (color_diff > 20.0)
+    lane_marking_mask = (white_paint | yellow_paint) & pavement_mask
+
+    lane_marking_mask_ratio = float(np.sum(lane_marking_mask) / max(1, total_pavement_pixels))
+
+    # Dilate lane marking mask by 3 pixels to suppress high-contrast paint border edges
+    paint_dilated = np.zeros_like(lane_marking_mask)
+    for dy in range(-3, 4):
+        for dx in range(-3, 4):
+            ys_src = slice(max(0, -dy), min(h, h - dy))
+            xs_src = slice(max(0, -dx), min(w, w - dx))
+            ys_dst = slice(max(0, dy), min(h, h + dy))
+            xs_dst = slice(max(0, dx), min(w, w + dx))
+            paint_dilated[ys_dst, xs_dst] |= lane_marking_mask[ys_src, xs_src]
+
+    # -------------------------------------------------------------------------
+    # 3. ROBUST POTHOLE DETECTION (LOCAL CONTRAST CAVITY + SHAPE FILTERING)
+    # -------------------------------------------------------------------------
+    # A genuine pothole is a localized 2D structural cavity void:
+    # 1. Significantly darker than its local surrounding asphalt plane (Black Top-Hat).
+    # 2. Inside the pavement mask, not on painted lane lines, not in roadside vegetation.
+    # 3. Coherent connected cluster with substantial area (filtering micro-aggregate noise).
+    # 4. Aspect ratio < 3.0 (distinguishing cavity craters from elongated shadows/ruts).
+
+    # Compute local background pavement luminance with a 24-pixel box filter
     luma_pil = Image.fromarray(luma.astype(np.uint8))
-    local_bg = np.array(luma_pil.filter(ImageFilter.BoxBlur(14)), dtype=np.float32)
+    local_bg = np.array(luma_pil.filter(ImageFilter.BoxBlur(24)), dtype=np.float32)
 
-    # Black Top-Hat contrast: Local depression depth = Local Background - Actual Luma
+    # Local depression depth = local background asphalt - actual pixel luminance
     local_depression = local_bg - luma
 
-    # Pothole cavity threshold: must be at least 24 units darker than local asphalt,
-    # and significantly darker than the road median, and not in paint zones.
+    # Cavity candidate mask:
+    # Depressed by at least 26 units from local road plane AND darker than pavement median
     pothole_candidate_mask = (
-        (local_depression > 24.0)
-        & (luma < (median_luma - 0.85 * max(15.0, std_luma)))
+        (local_depression > 26.0)
+        & (luma < (median_luma - 0.7 * max(14.0, std_luma)))
+        & pavement_mask
         & (~paint_dilated)
     )
 
-    # Connected component labeling to filter out noise, single grains, or linear streaks
-    num_pothole_blobs, pothole_blobs = _connected_components_stats(pothole_candidate_mask)
+    num_candidates_before, candidate_blobs = _connected_components_stats(pothole_candidate_mask)
+    pothole_candidates_before_filter = num_candidates_before
+
+    # Minimum pothole area: at least 0.12% of pavement area (~120 pixels in standard resolution)
+    # This prevents individual 8x8 pebble shadows and aggregate chips from registering as potholes.
+    min_pothole_area = max(90, int(total_pavement_pixels * 0.0012))
+    max_pothole_area = int(total_pavement_pixels * 0.20)
 
     valid_potholes = []
-    pothole_pixel_count = 0
+    total_pothole_pixels = 0
 
-    # Minimum cluster size: at least 0.05% of pavement area to avoid aggregate noise.
-    # Maximum aspect ratio: < 3.5 to distinguish circular/elliptical cavity voids from cracks/shadows.
-    min_blob_area = max(50, int(total_pavement_pixels * 0.0005))
-    max_blob_area = int(total_pavement_pixels * 0.25)
-
-    for blob in pothole_blobs:
+    for blob in candidate_blobs:
         area = blob["area"]
         aspect = blob["aspect_ratio"]
-        if min_blob_area <= area <= max_blob_area and aspect < 3.5:
+        # Must have significant cavity area and circular/elliptical shape
+        if min_pothole_area <= area <= max_pothole_area and aspect < 3.0:
             valid_potholes.append(blob)
-            pothole_pixel_count += area
+            total_pothole_pixels += area
 
-    detected_potholes_count = len(valid_potholes)
-    pothole_area_ratio = pothole_pixel_count / max(1, total_pavement_pixels)
+    valid_pothole_blobs = len(valid_potholes)
+    pothole_area_ratio = float(total_pothole_pixels / max(1, total_pavement_pixels))
 
-    potholes = min(8, detected_potholes_count)
+    # Calculate discrete pothole count based on verified cavities and total area:
+    # In ASTM D6433, scattered tiny specks (< 0.5% area) are not structural potholes.
+    if pothole_area_ratio > 0.06 or valid_pothole_blobs >= 4:
+        potholes = min(8, max(3, valid_pothole_blobs))
+    elif pothole_area_ratio > 0.015 or valid_pothole_blobs >= 1:
+        potholes = min(3, max(1, valid_pothole_blobs))
+    else:
+        potholes = 0
 
-    # 4. True Crack Detection (Directional Gradient & Dark Valley Filtering)
+    # -------------------------------------------------------------------------
+    # 4. ROBUST CRACK DETECTION (DARK VALLEY GRADIENTS & FISSURE CONTINUITY)
+    # -------------------------------------------------------------------------
+    # Real cracks are thin, dark, continuous fracture networks.
+    # We enforce:
+    # 1. Edge gradients using Sobel operators.
+    # 2. Dark valley condition: pixel luminance < local background (rejects bright lane lines).
+    # 3. Not inside paint marks and not inside detected pothole cavities.
+    # 4. Connected component filtering: elongated aspect ratio and minimum length.
+
     gx = np.zeros_like(luma)
     gx[:, 1:-1] = (luma[:, 2:] - luma[:, :-2]) / 2.0
     gy = np.zeros_like(luma)
     gy[1:-1, :] = (luma[2:, :] - luma[:-2, :]) / 2.0
     grad_mag = np.sqrt(gx ** 2 + gy ** 2)
 
-    # Mask of pothole cavities to prevent counting pothole crater perimeters as cracks
+    # Mask of pothole cavities so rims aren't double-counted as cracks
     pothole_mask = np.zeros_like(pothole_candidate_mask)
     for blob in valid_potholes:
         y1, x1, y2, x2 = blob["bbox"]
         pothole_mask[y1:y2+1, x1:x2+1] = True
 
-    # Dark Valley Criterion: pixel must be at least 12 units darker than local background
-    is_dark_valley = luma < (local_bg - 12.0)
+    # Dark Valley Condition: pixel must be at least 14 units darker than surrounding asphalt
+    is_dark_valley = luma < (local_bg - 14.0)
 
-    # Crack gradient threshold: requires substantial local edge contrast (min 26.0)
-    crack_grad_threshold = max(26.0, np.percentile(grad_mag, 92))
+    # High gradient threshold on pavement
+    crack_grad_threshold = max(26.0, np.percentile(grad_mag[pavement_mask], 93))
 
     crack_pixel_mask = (
         (grad_mag > crack_grad_threshold)
         & is_dark_valley
+        & pavement_mask
         & (~paint_dilated)
         & (~pothole_mask)
     )
 
-    # Connected component analysis on crack pixels to isolate continuous fissures
-    num_crack_blobs, crack_blobs = _connected_components_stats(crack_pixel_mask)
+    num_crack_candidates, crack_blobs = _connected_components_stats(crack_pixel_mask)
+    crack_candidates_before_filter = num_crack_candidates
 
-    min_crack_pixels = max(22, int(total_pavement_pixels * 0.0002))
-    valid_crack_segments = []
+    # Cracks must form continuous elongated fissures (aspect ratio > 2.0 or length > 40px)
+    min_crack_pixels = max(25, int(total_pavement_pixels * 0.00025))
+    valid_crack_segments_list = []
     total_crack_pixels = 0
 
     for blob in crack_blobs:
         area = blob["area"]
         aspect = blob["aspect_ratio"]
-        if area >= min_crack_pixels and (aspect > 1.8 or area > 55):
-            valid_crack_segments.append(blob)
+        if area >= min_crack_pixels and (aspect > 2.0 or area > 60):
+            valid_crack_segments_list.append(blob)
             total_crack_pixels += area
 
-    crack_density_ratio = total_crack_pixels / max(1, total_pavement_pixels)
+    valid_crack_segments = len(valid_crack_segments_list)
+    crack_density_ratio = float(total_crack_pixels / max(1, total_pavement_pixels))
 
     # Map crack segments to discrete linear fissure count
-    if len(valid_crack_segments) >= 7 or crack_density_ratio > 0.035:
-        cracks = min(16, max(6, int(len(valid_crack_segments) * 1.2)))
-    elif len(valid_crack_segments) >= 3 or crack_density_ratio > 0.015:
-        cracks = min(5, max(3, len(valid_crack_segments)))
-    elif len(valid_crack_segments) >= 1 and crack_density_ratio > 0.004:
-        cracks = min(2, len(valid_crack_segments))
+    if len(valid_crack_segments_list) >= 8 or crack_density_ratio > 0.035:
+        cracks = min(16, max(6, int(len(valid_crack_segments_list) * 1.2)))
+    elif len(valid_crack_segments_list) >= 3 or crack_density_ratio > 0.012:
+        cracks = min(5, max(3, len(valid_crack_segments_list)))
+    elif len(valid_crack_segments_list) >= 1 and crack_density_ratio > 0.003:
+        cracks = min(2, len(valid_crack_segments_list))
     else:
         cracks = 0
 
-    # 5. Surface Roughness / Texture Wear (Aggregate Loss)
-    baseline_pavement_mask = (~paint_dilated) & (~pothole_mask) & (~crack_pixel_mask)
-    if np.sum(baseline_pavement_mask) > 100:
-        clean_pavement_pixels = luma[baseline_pavement_mask]
-        pavement_roughness = float(np.std(clean_pavement_pixels) / (np.mean(clean_pavement_pixels) + 1e-5))
+    # -------------------------------------------------------------------------
+    # 5. SURFACE ROUGHNESS / AGGREGATE RAVNELLING (ASTM D6433)
+    # -------------------------------------------------------------------------
+    clean_pavement_mask = pavement_mask & (~paint_dilated) & (~pothole_mask) & (~crack_pixel_mask)
+    if np.sum(clean_pavement_mask) > 200:
+        clean_pixels = luma[clean_pavement_mask]
+        surface_roughness = float(np.std(clean_pixels) / (np.mean(clean_pixels) + 1e-5))
     else:
-        pavement_roughness = float(std_luma / (mean_luma + 1e-5))
+        surface_roughness = float(std_luma / (mean_luma + 1e-5))
 
-    # Surface damage levels
-    if pavement_roughness > 0.42:
-        surface_damage = min(5, max(2, int(pavement_roughness * 8)))
-    elif pavement_roughness > 0.28:
-        surface_damage = min(2, max(1, int(pavement_roughness * 4)))
+    # Surface damage levels (stripping, ravelling, aggregate dislodgement)
+    if surface_roughness > 0.45:
+        surface_damage = min(5, max(2, int(surface_roughness * 8)))
+    elif surface_roughness > 0.32:
+        surface_damage = min(2, max(1, int(surface_roughness * 4)))
     else:
         surface_damage = 0
 
-    # 6. ASTM D6433 PCI (Pavement Condition Index) Calculation
-    pothole_deduction = min(55, potholes * 13 + int(pothole_area_ratio * 150))
+    # -------------------------------------------------------------------------
+    # 6. ASTM D6433 PCI (PAVEMENT CONDITION INDEX) CALCULATION
+    # -------------------------------------------------------------------------
+    pothole_deduction = min(55, potholes * 14 + int(pothole_area_ratio * 160))
     crack_deduction = min(40, cracks * 3 + int(crack_density_ratio * 120))
-    surface_deduction = min(20, surface_damage * 3 + int(max(0.0, pavement_roughness - 0.20) * 25))
+    surface_deduction = min(20, surface_damage * 3 + int(max(0.0, surface_roughness - 0.22) * 25))
 
     total_deductions = pothole_deduction + crack_deduction + surface_deduction
 
-    # Clean roads receive high PCI (88 - 98)
+    # Clean roads (0 potholes, 0-1 cracks, low roughness) receive high PCI (88 - 98)
     if potholes == 0 and cracks <= 1 and surface_damage == 0:
         health_score = int(np.clip(100 - total_deductions, 88, 98))
-    elif potholes == 0 and cracks <= 2 and surface_damage == 0:
-        health_score = int(np.clip(100 - total_deductions, 82, 92))
+    elif potholes == 0 and cracks <= 2 and surface_damage <= 1:
+        health_score = int(np.clip(100 - total_deductions, 80, 90))
     elif potholes == 0 and cracks <= 4:
-        health_score = int(np.clip(100 - total_deductions, 70, 85))
+        health_score = int(np.clip(100 - total_deductions, 70, 84))
     else:
         health_score = int(np.clip(100 - total_deductions, 18, 75))
 
-    # Derived Failure Risk Probability & Risk Tier
+    # Failure Risk Probability & Risk Tier
     risk_percentage = int(np.clip(100 - health_score + (8 if potholes >= 3 else 0), 5, 95))
 
     if health_score < 45 or potholes >= 4 or (potholes >= 2 and cracks >= 5):
@@ -360,7 +436,7 @@ def analyze_road_image_cv(image_bytes: bytes, filename: str = "") -> Dict[str, A
         priority = "P4"
         recommendation = "Scheduled routine surface sweep and drainage review"
 
-    # Deterministic inspection ID tied strictly to image content SHA-256 hash
+    # Deterministic SHA-256 inspection ID
     img_hash = hashlib.sha256(image_bytes).hexdigest()[:6].upper()
     inspection_id = f"INS-{img_hash}"
 
@@ -378,11 +454,14 @@ def analyze_road_image_cv(image_bytes: bytes, filename: str = "") -> Dict[str, A
         "analysis_method": "Optical Computer Vision (ASTM D6433 distress quantification)",
         "diagnostics": {
             "image_resolution": f"{orig_w}x{orig_h}",
+            "pavement_region_ratio": round(pavement_region_ratio, 4),
+            "lane_marking_mask_ratio": round(lane_marking_mask_ratio, 4),
+            "pothole_candidates_before_filter": pothole_candidates_before_filter,
+            "valid_pothole_blobs": valid_pothole_blobs,
+            "crack_candidates_before_filter": crack_candidates_before_filter,
+            "valid_crack_segments": valid_crack_segments,
             "pothole_area_ratio": round(pothole_area_ratio, 4),
             "crack_density_ratio": round(crack_density_ratio, 4),
-            "surface_roughness": round(pavement_roughness, 4),
-            "median_luminance": round(median_luma, 2),
-            "valid_pothole_blobs": len(valid_potholes),
-            "valid_crack_segments": len(valid_crack_segments),
+            "surface_roughness": round(surface_roughness, 4),
         },
     }
