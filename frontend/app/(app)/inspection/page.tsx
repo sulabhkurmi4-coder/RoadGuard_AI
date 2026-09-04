@@ -102,8 +102,8 @@ export default function InspectionPage() {
         const svgData = decodeURIComponent(
           selectedPreset.previewUrl.replace(/^data:image\/svg\+xml;utf8,/, "")
         );
-        fileToSend = new Blob([svgData], { type: "image/jpeg" });
-        filename = `${selectedPreset.id}.jpg`;
+        fileToSend = new Blob([svgData], { type: "image/svg+xml" });
+        filename = `${selectedPreset.id}.svg`;
       } else {
         fileToSend = new Blob(["road-image"], { type: "image/jpeg" });
       }
@@ -111,6 +111,20 @@ export default function InspectionPage() {
       // Call live FastAPI backend endpoint: POST /api/inspection/analyze
       const result = await analyzeRoadWithFastApi(fileToSend, filename);
       setApiResult(result);
+
+      if (typeof window !== "undefined") {
+        try {
+          const payload = {
+            ...result,
+            imageUrl: imagePreviewUrl,
+            fileName: filename,
+            analyzedAt: new Date().toISOString(),
+          };
+          sessionStorage.setItem("latest_road_inspection", JSON.stringify(payload));
+        } catch {
+          // Ignore quota/private browsing errors
+        }
+      }
     } catch (err: any) {
       console.error("FastAPI road analysis error:", err);
       setErrorMessage(
@@ -360,12 +374,22 @@ export default function InspectionPage() {
       {apiResult && !isAnalyzing && (
         <div className="space-y-6 pt-4">
           {/* Results Header */}
-          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-800 font-mono">
-            <div className="flex items-center gap-2">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-800 font-mono">
+            <div className="flex flex-wrap items-center gap-2">
               <CheckCircleIcon size={18} className="text-emerald-400" />
               <h2 className="text-base sm:text-lg font-bold text-white">
                 Inspection Results from FastAPI Backend
               </h2>
+              {apiResult.is_demo_fallback ? (
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-amber-950/80 border border-amber-500/50 text-amber-300">
+                  Demo Fallback (Synthetic Preset)
+                </span>
+              ) : (
+                <span className="px-2.5 py-0.5 rounded-full text-[11px] font-mono font-bold bg-cyan-950/80 border border-cyan-500/50 text-cyan-300 flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                  Optical CV Analysis
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-3 text-xs">
               <span className="text-slate-400">Inspection ID:</span>
@@ -374,6 +398,17 @@ export default function InspectionPage() {
               </strong>
             </div>
           </div>
+
+          {/* Demo Fallback Notice if applicable */}
+          {apiResult.is_demo_fallback && (
+            <div className="p-3.5 rounded-xl bg-amber-950/30 border border-amber-500/40 flex items-start gap-2.5 text-xs font-mono text-amber-300">
+              <AlertTriangleIcon size={16} className="text-amber-400 shrink-0 mt-0.5" />
+              <div>
+                <strong className="font-bold text-amber-200">Demo Fallback Mode:</strong>{" "}
+                This result was generated from a synthetic highway vector preset. Upload a real JPG, PNG, or WEBP photo of road pavement to perform live optical computer vision distress quantification.
+              </div>
+            </div>
+          )}
 
           {/* Results Grid: Potholes, Cracks, Surface Damage, Health Score, Risk Percentage, Risk Level */}
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
@@ -460,14 +495,20 @@ export default function InspectionPage() {
 
           {/* Inspection Summary Section */}
           <div className="p-6 rounded-2xl bg-slate-900/70 border border-slate-800 space-y-5">
-            <div className="flex items-center justify-between pb-3 border-b border-slate-800 font-mono">
+            <div className="flex flex-wrap items-center justify-between pb-3 border-b border-slate-800 font-mono gap-2">
               <div className="flex items-center gap-2">
                 <SparklesIcon size={16} className="text-cyan-400" />
                 <h3 className="text-base font-bold text-white">Engineering Assessment</h3>
               </div>
-              <span className="text-xs text-emerald-400 font-bold">
-                API Status: OK (200)
-              </span>
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-slate-400">Method:</span>
+                <span className="text-cyan-300 font-bold px-2 py-0.5 rounded bg-slate-950 border border-slate-800 text-[11px]">
+                  {apiResult.analysis_method || (apiResult.is_demo_fallback ? "Demo Fallback Preset" : "Optical Computer Vision")}
+                </span>
+                <span className="text-emerald-400 font-bold ml-1">
+                  API 200 OK
+                </span>
+              </div>
             </div>
 
             {/* Summary Details Grid */}

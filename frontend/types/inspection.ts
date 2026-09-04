@@ -86,6 +86,10 @@ export interface FastApiInspectionResponse {
   risk_level: string;
   recommendation: string;
   priority: string;
+  is_demo_fallback?: boolean;
+  analysis_method?: string;
+  diagnostics?: Record<string, any>;
 }
+
 
 

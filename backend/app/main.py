@@ -40,6 +40,10 @@ app.add_middleware(
 )
 
 
+from typing import Optional
+from app.image_analyzer import analyze_road_image_cv
+
+
 class InspectionResponse(BaseModel):
     inspection_id: str
     potholes: int
@@ -50,6 +54,9 @@ class InspectionResponse(BaseModel):
     risk_level: str
     recommendation: str
     priority: str
+    is_demo_fallback: bool = False
+    analysis_method: str = "Optical Computer Vision (ASTM D6433)"
+    diagnostics: Optional[dict] = None
 
 
 @app.get("/")
@@ -70,8 +77,8 @@ def health():
 @app.post("/api/inspection/analyze", response_model=InspectionResponse)
 async def analyze_road(file: UploadFile = File(...)):
     """
-    Accepts an uploaded road image and returns structured distress analysis.
-    NOTE: Simulated prototype analysis. Does not run a trained ML model yet.
+    Accepts an uploaded road image and returns structured distress analysis
+    quantified by optical computer vision.
     """
     if not file.filename:
         raise HTTPException(status_code=400, detail="No file provided")
@@ -89,58 +96,13 @@ async def analyze_road(file: UploadFile = File(...)):
     # Read uploaded bytes to ensure upload succeeded
     content = await file.read()
     if len(content) == 0:
-        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+        raise HTTPException(status_code=400, detail="Uploaded file is empty (0 bytes)")
 
-    filename = file.filename.lower()
-    timestamp_id = int(time.time() % 10000)
+    try:
+        analysis_data = analyze_road_image_cv(content, file.filename)
+        return InspectionResponse(**analysis_data)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Image analysis error: {str(e)}")
 
-    # Dynamic simulated outputs reflecting real physical patterns
-    if "port" in filename or "pothole" in filename:
-        return InspectionResponse(
-            inspection_id=f"INS-{timestamp_id}",
-            potholes=6,
-            cracks=8,
-            surface_damage=5,
-            health_score=38,
-            risk_percentage=86,
-            risk_level="CRITICAL",
-            recommendation="Emergency base stabilization & deep hot-mix overlay",
-            priority="P1",
-        )
-    elif "101" in filename or "joint" in filename or "moderate" in filename:
-        return InspectionResponse(
-            inspection_id=f"INS-{timestamp_id}",
-            potholes=1,
-            cracks=7,
-            surface_damage=2,
-            health_score=72,
-            risk_percentage=34,
-            risk_level="MODERATE",
-            recommendation="High-flexibility silicone joint injection",
-            priority="P3",
-        )
-    elif "healthy" in filename or "good" in filename:
-        return InspectionResponse(
-            inspection_id=f"INS-{timestamp_id}",
-            potholes=0,
-            cracks=3,
-            surface_damage=1,
-            health_score=86,
-            risk_percentage=18,
-            risk_level="LOW",
-            recommendation="Scheduled routine surface sweep and drainage review",
-            priority="P4",
-        )
-    else:
-        # Default structured analysis conforming to example specification
-        return InspectionResponse(
-            inspection_id=f"INS-{timestamp_id:03d}" if timestamp_id < 1000 else f"INS-{timestamp_id}",
-            potholes=4,
-            cracks=11,
-            surface_damage=3,
-            health_score=62,
-            risk_percentage=48,
-            risk_level="MODERATE",
-            recommendation="Preventive resurfacing",
-            priority="P2",
-        )

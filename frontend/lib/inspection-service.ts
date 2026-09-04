@@ -276,13 +276,18 @@ export async function analyzeRoadImage(
   };
 }
 
+export const PRODUCTION_RENDER_URL = "https://roadguard-ai-v0z4.onrender.com";
+
 export const API_BASE_URL =
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:8000";
+  process.env.NEXT_PUBLIC_API_URL ||
+  (typeof window !== "undefined" && window.location.hostname.includes("vercel.app")
+    ? PRODUCTION_RENDER_URL
+    : "http://localhost:8000");
 
 /**
  * LIVE FASTAPI BACKEND CLIENT:
  * Submits an uploaded road image to the FastAPI endpoint POST /api/inspection/analyze
- * Supports resilient fallback between localhost, 127.0.0.1, and Next.js proxy rewrite.
+ * Supports resilient fallback between localhost, 127.0.0.1, production Render backend, and Next.js proxy rewrite.
  */
 export async function analyzeRoadWithFastApi(
   fileOrBlob: File | Blob,
@@ -298,10 +303,15 @@ export async function analyzeRoadWithFastApi(
     return formData;
   };
 
-  // Build list of candidate endpoints to try for maximum resilience on Windows (IPv4/IPv6 localhost resolution)
+  // Build list of candidate endpoints to try for maximum resilience on Windows (IPv4/IPv6 localhost resolution) & Vercel production
   const candidateUrls: string[] = [];
   const primaryUrl = `${API_BASE_URL.replace(/\/+$/, "")}/api/inspection/analyze`;
   candidateUrls.push(primaryUrl);
+
+  // If in browser on Vercel or production, always ensure Render URL is attempted
+  if (typeof window !== "undefined" && window.location.hostname.includes("vercel.app")) {
+    candidateUrls.push(`${PRODUCTION_RENDER_URL}/api/inspection/analyze`);
+  }
 
   if (API_BASE_URL.includes("localhost:8000")) {
     candidateUrls.push("http://127.0.0.1:8000/api/inspection/analyze");

@@ -5,7 +5,9 @@ const nextConfig: NextConfig = {
     const backendUrl =
       process.env.FASTAPI_INTERNAL_URL ||
       process.env.NEXT_PUBLIC_API_URL ||
-      "http://127.0.0.1:8000";
+      (process.env.NODE_ENV === "production"
+        ? "https://roadguard-ai-v0z4.onrender.com"
+        : "http://127.0.0.1:8000");
 
     return [
       {
