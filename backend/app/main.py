@@ -10,8 +10,9 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Enable CORS for local Next.js frontend (all local hostnames, ports, and dev servers)
+# Enable CORS for local Next.js frontend and production Vercel deployment
 origins = [
+    "https://road-guard-ai-chi.vercel.app",
     "http://localhost:3000",
     "http://localhost:3001",
     "http://localhost:3002",
