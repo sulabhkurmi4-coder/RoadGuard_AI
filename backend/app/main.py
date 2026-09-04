@@ -10,20 +10,32 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Enable CORS for local Next.js frontend
+# Enable CORS for local Next.js frontend (all local hostnames, ports, and dev servers)
 origins = [
     "http://localhost:3000",
+    "http://localhost:3001",
+    "http://localhost:3002",
+    "http://localhost:3003",
+    "http://localhost:3004",
     "http://localhost:3005",
     "http://127.0.0.1:3000",
+    "http://127.0.0.1:3001",
+    "http://127.0.0.1:3002",
+    "http://127.0.0.1:3003",
+    "http://127.0.0.1:3004",
     "http://127.0.0.1:3005",
+    "http://localhost:8000",
+    "http://127.0.0.1:8000",
 ]
 
 app.add_middleware(
     CORSMiddleware,
     allow_origins=origins,
+    allow_origin_regex=r"^https?://(localhost|127\.0\.0\.1|0\.0\.0\.0|\[::1\])(:\d+)?$",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"],
 )
 
 
@@ -64,11 +76,13 @@ async def analyze_road(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="No file provided")
 
     # Validate file extension
-    allowed_extensions = (".jpg", ".jpeg", ".png", ".webp")
-    if not file.filename.lower().endswith(allowed_extensions):
+    allowed_extensions = (".jpg", ".jpeg", ".png", ".webp", ".svg", ".bmp", ".jfif", ".gif", ".tiff")
+    is_allowed_ext = file.filename.lower().endswith(allowed_extensions)
+    is_image_type = bool(file.content_type and file.content_type.startswith("image/"))
+    if not is_allowed_ext and not is_image_type:
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file type. Allowed formats: {', '.join(allowed_extensions)}",
+            detail=f"Unsupported file type ({file.filename}). Allowed formats: {', '.join(allowed_extensions)}",
         )
 
     # Read uploaded bytes to ensure upload succeeded

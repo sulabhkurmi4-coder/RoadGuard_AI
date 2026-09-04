@@ -8,6 +8,7 @@ import {
   BarChartIcon,
   ArrowRightIcon,
 } from "@/components/icons";
+import { formatNumber } from "@/lib/format-utils";
 
 export default function ReportsPage() {
   const reportsList = [
@@ -207,7 +208,7 @@ export default function ReportsPage() {
               <div className="text-xs font-mono text-slate-400">{d.district}</div>
               <div className="text-xl font-bold font-mono text-white">PCI {d.pciAvg} / 100</div>
               <div className="text-[11px] font-mono text-cyan-400">
-                {d.miles.toLocaleString()} Lane-Miles
+                {formatNumber(d.miles)} Lane-Miles
               </div>
             </div>
           ))}

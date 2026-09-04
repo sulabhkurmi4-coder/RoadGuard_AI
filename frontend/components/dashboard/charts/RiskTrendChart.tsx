@@ -14,6 +14,7 @@ import {
 import { RiskTrendDataPoint } from "@/types/dashboard";
 import { demoRiskTrendChartData } from "@/lib/dashboard-demo-data";
 import { TrendingUpIcon } from "@/components/icons";
+import { formatMiles } from "@/lib/format-utils";
 
 interface RiskTrendChartProps {
   data?: RiskTrendDataPoint[];
@@ -47,7 +48,7 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
             <span className="font-bold text-white">
               {entry.name === "Average PCI"
                 ? `${entry.value} / 100`
-                : `${entry.value.toLocaleString()} mi`}
+                : formatMiles(entry.value)}
             </span>
           </div>
         ))}

@@ -7,6 +7,7 @@ import {
   CheckCircleIcon,
   ActivityIcon,
 } from "@/components/icons";
+import { formatMiles, formatKm } from "@/lib/format-utils";
 
 interface NetworkStatsProps {
   stats: NetworkStatistics;
@@ -16,8 +17,8 @@ export default function NetworkStats({ stats }: NetworkStatsProps) {
   const cards = [
     {
       title: "Total Road Network",
-      value: `${stats.totalRoadNetworkMiles.toLocaleString()} mi`,
-      subValue: `${stats.totalRoadNetworkKm.toLocaleString()} km`,
+      value: formatMiles(stats.totalRoadNetworkMiles),
+      subValue: formatKm(stats.totalRoadNetworkKm),
       badge: "Jurisdiction Grid",
       badgeColor: "text-slate-300 bg-slate-800 border-slate-700",
       description: "Complete state highway and municipal arterial network",
@@ -28,8 +29,8 @@ export default function NetworkStats({ stats }: NetworkStatsProps) {
     },
     {
       title: "Roads Inspected",
-      value: `${stats.roadsInspectedMiles.toLocaleString()} mi`,
-      subValue: `${stats.roadsInspectedKm.toLocaleString()} km`,
+      value: formatMiles(stats.roadsInspectedMiles),
+      subValue: formatKm(stats.roadsInspectedKm),
       badge: `${stats.inspectedPercentage}% Monitored`,
       badgeColor: "text-emerald-300 bg-emerald-950/80 border-emerald-500/40",
       description: "Scanned via mobile LiDAR and 8K multispectral vision",
@@ -40,8 +41,8 @@ export default function NetworkStats({ stats }: NetworkStatsProps) {
     },
     {
       title: "Critical Roads",
-      value: `${stats.criticalRoadsMiles.toLocaleString()} mi`,
-      subValue: `${stats.criticalRoadsKm.toLocaleString()} km`,
+      value: formatMiles(stats.criticalRoadsMiles),
+      subValue: formatKm(stats.criticalRoadsKm),
       badge: `${stats.criticalPercentage}% Critical`,
       badgeColor: "text-rose-300 bg-rose-950/80 border-rose-500/40",
       description: "PCI < 40: Sub-base collapse & severe alligator cracking",
@@ -52,8 +53,8 @@ export default function NetworkStats({ stats }: NetworkStatsProps) {
     },
     {
       title: "High Risk Roads",
-      value: `${stats.highRiskRoadsMiles.toLocaleString()} mi`,
-      subValue: `${stats.highRiskRoadsKm.toLocaleString()} km`,
+      value: formatMiles(stats.highRiskRoadsMiles),
+      subValue: formatKm(stats.highRiskRoadsKm),
       badge: `${stats.highRiskPercentage}% High Risk`,
       badgeColor: "text-amber-300 bg-amber-950/80 border-amber-500/40",
       description: "PCI 40–59: Accelerating ravelling & joint moisture ingress",

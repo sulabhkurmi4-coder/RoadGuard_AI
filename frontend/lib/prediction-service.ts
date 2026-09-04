@@ -1,6 +1,7 @@
 import { RoadPredictionResult, RiskDriverItem, TimelineForecastPoint } from "@/types/prediction";
 import { demoRoads, DemoRoadSegment } from "@/data/roads";
 import { getHealthCategory } from "@/lib/road-health";
+import { formatCurrency } from "@/lib/format-utils";
 
 export const PROTOTYPE_PREDICTION_DISCLAIMER =
   "Prototype Prediction • Simulated Deterioration Model. This application does not use a validated real-world predictive ML model yet.";
@@ -174,9 +175,9 @@ export async function getRoadPrediction(roadId: string): Promise<RoadPredictionR
           : road.healthScore < 60
           ? "Execute within 30 Days"
           : "Schedule within 60 Days",
-      preservationCost: `$${currentCost.toLocaleString()}`,
-      rebuildPenaltyIfDeferred: `$${deferredCost.toLocaleString()}`,
-      netSavings: `$${savings.toLocaleString()}`,
+      preservationCost: formatCurrency(currentCost),
+      rebuildPenaltyIfDeferred: formatCurrency(deferredCost),
+      netSavings: formatCurrency(savings),
     },
     modelMetadata: {
       isPrototypePrediction: true,

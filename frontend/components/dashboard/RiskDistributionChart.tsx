@@ -2,6 +2,7 @@
 
 import React, { useState } from "react";
 import { RiskDistributionSegment } from "@/types/dashboard";
+import { formatNumber, formatMiles } from "@/lib/format-utils";
 import { LayersIcon } from "@/components/icons";
 
 interface RiskDistributionChartProps {
@@ -79,7 +80,7 @@ export default function RiskDistributionChart({ distribution }: RiskDistribution
                     {distribution[hoveredIdx].percentage}%
                   </span>
                   <span className="text-base sm:text-lg font-black text-white">
-                    {distribution[hoveredIdx].laneMiles.toLocaleString()} mi
+                    {formatMiles(distribution[hoveredIdx].laneMiles)}
                   </span>
                   <span
                     className="text-[10px] font-bold px-1.5 py-0.5 rounded mt-0.5"
@@ -97,7 +98,7 @@ export default function RiskDistributionChart({ distribution }: RiskDistribution
                     Total Monitored
                   </span>
                   <span className="text-lg sm:text-xl font-black text-white">
-                    {totalMiles.toLocaleString()}
+                    {formatNumber(totalMiles)}
                   </span>
                   <span className="text-[10px] text-cyan-400 font-bold">Lane-Miles</span>
                 </>
@@ -137,7 +138,7 @@ export default function RiskDistributionChart({ distribution }: RiskDistribution
                 </div>
 
                 <div className="flex items-center justify-between text-xs font-mono text-slate-400 pl-5">
-                  <span>{item.laneMiles.toLocaleString()} lane-miles</span>
+                  <span>{formatNumber(item.laneMiles)} lane-miles</span>
                   <div className="flex items-center gap-3 text-[11px]">
                     <span className="text-slate-300">Avg PCI: <strong>{item.averagePci}</strong></span>
                     <span className="text-rose-400 font-semibold">

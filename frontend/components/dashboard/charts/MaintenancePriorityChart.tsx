@@ -14,6 +14,7 @@ import {
 import { MaintenancePriorityChartItem } from "@/types/dashboard";
 import { demoMaintenancePriorityChartData } from "@/lib/dashboard-demo-data";
 import { TruckIcon } from "@/components/icons";
+import { formatCurrency, formatNumber } from "@/lib/format-utils";
 
 interface MaintenancePriorityChartProps {
   data?: MaintenancePriorityChartItem[];
@@ -41,12 +42,12 @@ function CustomTooltip({ active, payload, label }: CustomTooltipProps) {
         <div className="space-y-1">
           <div className="flex items-center justify-between gap-4 text-emerald-400">
             <span>Preservation Cost:</span>
-            <span className="font-bold">${raw.preservationCost}k (${(raw.preservationCost * 1000).toLocaleString()})</span>
+            <span className="font-bold">${raw.preservationCost}k ({formatCurrency(raw.preservationCost * 1000)})</span>
           </div>
 
           <div className="flex items-center justify-between gap-4 text-rose-400">
             <span>Deferred Rebuild Penalty:</span>
-            <span className="font-bold">${raw.deferredPenalty}k (${(raw.deferredPenalty * 1000).toLocaleString()})</span>
+            <span className="font-bold">${raw.deferredPenalty}k ({formatCurrency(raw.deferredPenalty * 1000)})</span>
           </div>
         </div>
 

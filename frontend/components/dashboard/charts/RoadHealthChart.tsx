@@ -12,6 +12,7 @@ import {
 import { RoadHealthChartItem } from "@/types/dashboard";
 import { demoRoadHealthChartData } from "@/lib/dashboard-demo-data";
 import { ActivityIcon } from "@/components/icons";
+import { formatNumber, formatMiles } from "@/lib/format-utils";
 
 interface RoadHealthChartProps {
   data?: RoadHealthChartItem[];
@@ -36,7 +37,7 @@ function CustomTooltip({ active, payload }: CustomTooltipProps) {
           <span className="font-bold text-white text-sm">{item.name}</span>
         </div>
         <div className="text-slate-300">
-          Lane Miles: <strong className="text-white">{item.value.toLocaleString()} mi</strong>
+          Lane Miles: <strong className="text-white">{formatMiles(item.value)}</strong>
         </div>
         <div className="text-slate-300">
           Share: <strong className="text-cyan-400">{item.percentage}%</strong> of Network
@@ -124,7 +125,7 @@ export default function RoadHealthChart({
                   {data[activeIndex].percentage}%
                 </span>
                 <span className="text-base font-black text-white">
-                  {data[activeIndex].value.toLocaleString()}
+                  {formatNumber(data[activeIndex].value)}
                 </span>
                 <span
                   className="text-[9px] font-bold px-1.5 py-0.5 rounded mt-0.5"
@@ -142,7 +143,7 @@ export default function RoadHealthChart({
                   Total
                 </span>
                 <span className="text-base sm:text-lg font-black text-white">
-                  {totalMiles.toLocaleString()}
+                  {formatNumber(totalMiles)}
                 </span>
                 <span className="text-[10px] text-emerald-400 font-bold">Miles</span>
               </>
@@ -171,7 +172,7 @@ export default function RoadHealthChart({
                 <span className="text-slate-200 font-medium">{item.name}</span>
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-slate-400">{item.value.toLocaleString()} mi</span>
+                <span className="text-slate-400">{formatMiles(item.value)}</span>
                 <span className="font-bold text-white text-xs px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800">
                   {item.percentage}%
                 </span>

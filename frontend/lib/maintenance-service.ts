@@ -1,10 +1,11 @@
-import { demoRoads, DemoRoadSegment } from "@/data/roads";
+import { demoRoads } from "@/data/roads";
 import {
   MaintenanceItem,
   MaintenanceFilter,
   MaintenanceSortOption,
   MaintenancePriority,
 } from "@/types/maintenance";
+import { formatCurrency } from "@/lib/format-utils";
 
 export const PROTOTYPE_COST_DISCLAIMER =
   "Prototype Cost Estimate — Based on modeled regional unit rates. Actual DOT contract bids and bid-letting values will vary.";
@@ -51,7 +52,7 @@ export const demoMaintenanceItems: MaintenanceItem[] = demoRoads
       priorityLabel,
       timeline,
       estimatedCost: cost,
-      formattedCost: `$${cost.toLocaleString()}`,
+      formattedCost: formatCurrency(cost),
       potholeCount: road.potholeCount,
       crackCount: road.crackCount,
       surfaceDamage: road.surfaceDamage,

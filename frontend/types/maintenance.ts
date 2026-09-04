@@ -1,4 +1,4 @@
-import { DemoRoadSegment, RoadRiskCategory } from "@/data/roads";
+import { RoadRiskCategory } from "@/data/roads";
 
 export type MaintenancePriority = "P1" | "P2" | "P3";
 

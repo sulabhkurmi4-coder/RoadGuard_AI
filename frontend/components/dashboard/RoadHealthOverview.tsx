@@ -1,6 +1,7 @@
 import React from "react";
 import { RoadHealthOverviewData } from "@/types/dashboard";
 import { CheckCircleIcon, AlertTriangleIcon, ActivityIcon } from "@/components/icons";
+import { formatMiles } from "@/lib/format-utils";
 
 interface RoadHealthOverviewProps {
   healthData: RoadHealthOverviewData;
@@ -97,7 +98,7 @@ export default function RoadHealthOverview({ healthData }: RoadHealthOverviewPro
                   {tier.percentage.toFixed(1)}%
                 </span>
                 <span className="text-xs text-slate-400">
-                  {tier.laneMiles.toLocaleString()} mi
+                  {formatMiles(tier.laneMiles)}
                 </span>
               </div>
             </div>

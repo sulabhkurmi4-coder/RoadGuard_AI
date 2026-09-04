@@ -1,9 +1,9 @@
 import {
   InspectionAnalysisResult,
   SamplePreset,
-  DefectDetection,
   FastApiInspectionResponse,
 } from "@/types/inspection";
+import { formatTimeString } from "@/lib/format-utils";
 
 export const INSPECTION_DISCLAIMER =
   "Simulated Demonstration Analysis • Synthetic Model Output (Demo Mode)";
@@ -109,7 +109,7 @@ export async function analyzeRoadImage(
   if (sampleId === "sample-port") {
     return {
       analysisId: "RG-ANL-9042",
-      analyzedAt: new Date().toLocaleTimeString(),
+      analyzedAt: formatTimeString(),
       fileName,
       fileSizeBytes,
       imageUrl: typeof fileOrUrl === "string" ? fileOrUrl : URL.createObjectURL(fileOrUrl),
@@ -161,7 +161,7 @@ export async function analyzeRoadImage(
   if (sampleId === "sample-route101") {
     return {
       analysisId: "RG-ANL-9043",
-      analyzedAt: new Date().toLocaleTimeString(),
+      analyzedAt: formatTimeString(),
       fileName,
       fileSizeBytes,
       imageUrl: typeof fileOrUrl === "string" ? fileOrUrl : URL.createObjectURL(fileOrUrl),
@@ -213,7 +213,7 @@ export async function analyzeRoadImage(
   // Default findings (e.g. Interstate 95 or custom uploaded images)
   return {
     analysisId: "RG-ANL-9041",
-    analyzedAt: new Date().toLocaleTimeString(),
+    analyzedAt: formatTimeString(),
     fileName,
     fileSizeBytes,
     imageUrl: typeof fileOrUrl === "string" ? fileOrUrl : URL.createObjectURL(fileOrUrl),
@@ -282,35 +282,75 @@ export const API_BASE_URL =
 /**
  * LIVE FASTAPI BACKEND CLIENT:
  * Submits an uploaded road image to the FastAPI endpoint POST /api/inspection/analyze
+ * Supports resilient fallback between localhost, 127.0.0.1, and Next.js proxy rewrite.
  */
 export async function analyzeRoadWithFastApi(
   fileOrBlob: File | Blob,
   filename: string = "road_inspection.jpg"
 ): Promise<FastApiInspectionResponse> {
-  const formData = new FormData();
-  if (fileOrBlob instanceof File) {
-    formData.append("file", fileOrBlob);
-  } else {
-    formData.append("file", fileOrBlob, filename);
-  }
-
-  const response = await fetch(`${API_BASE_URL}/api/inspection/analyze`, {
-    method: "POST",
-    body: formData,
-  });
-
-  if (!response.ok) {
-    let errorDetail = `Backend inspection failed (HTTP ${response.status})`;
-    try {
-      const errorJson = await response.json();
-      if (errorJson.detail) errorDetail = errorJson.detail;
-    } catch {
-      // fallback
+  const createFormData = () => {
+    const formData = new FormData();
+    if (fileOrBlob instanceof File) {
+      formData.append("file", fileOrBlob, fileOrBlob.name || filename);
+    } else {
+      formData.append("file", fileOrBlob, filename || "road_inspection.jpg");
     }
-    throw new Error(errorDetail);
+    return formData;
+  };
+
+  // Build list of candidate endpoints to try for maximum resilience on Windows (IPv4/IPv6 localhost resolution)
+  const candidateUrls: string[] = [];
+  const primaryUrl = `${API_BASE_URL.replace(/\/+$/, "")}/api/inspection/analyze`;
+  candidateUrls.push(primaryUrl);
+
+  if (API_BASE_URL.includes("localhost:8000")) {
+    candidateUrls.push("http://127.0.0.1:8000/api/inspection/analyze");
+  } else if (API_BASE_URL.includes("127.0.0.1:8000")) {
+    candidateUrls.push("http://localhost:8000/api/inspection/analyze");
   }
 
-  return await response.json();
+  // Also include same-origin relative proxy via Next.js rewrites
+  if (typeof window !== "undefined") {
+    candidateUrls.push("/api/inspection/analyze");
+  }
+
+  // Deduplicate candidate URLs
+  const uniqueUrls = Array.from(new Set(candidateUrls));
+
+  for (const endpoint of uniqueUrls) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        body: createFormData(),
+      });
+
+      if (!response.ok) {
+        let errorDetail = `Backend inspection failed (HTTP ${response.status})`;
+        try {
+          const errorJson = await response.json();
+          if (errorJson.detail) errorDetail = errorJson.detail;
+        } catch {
+          // fallback
+        }
+        throw new Error(errorDetail);
+      }
+
+      return await response.json();
+    } catch (err: unknown) {
+      const error = err instanceof Error ? err : new Error(String(err));
+      // If it was an HTTP status error (e.g., 400 Bad Request), don't retry other hosts
+      if (error.message && !error.message.includes("Failed to fetch") && !error.message.includes("NetworkError")) {
+        throw error;
+      }
+      // Continue to next candidate URL on network connection failure
+    }
+  }
+
+  // If all candidate endpoints failed with network errors
+  throw new Error(
+    `Failed to connect to FastAPI backend at ${API_BASE_URL}. ` +
+      `Please ensure the FastAPI server is running on port 8000 (e.g., 'python backend/main.py' or 'uvicorn app.main:app --reload --port 8000').`
+  );
 }
 
 /**
@@ -337,7 +377,7 @@ export async function runMockRoadAnalysis(
       recommendation: "Emergency base stabilization & hot-mix overlay",
       priority: "P1",
       confidence: 97.2,
-      analysisTimestamp: new Date().toLocaleTimeString(),
+      analysisTimestamp: formatTimeString(),
       isSimulatedDemo: true,
     };
   }
@@ -355,7 +395,7 @@ export async function runMockRoadAnalysis(
       recommendation: "High-flexibility silicone joint sealing",
       priority: "P3",
       confidence: 93.6,
-      analysisTimestamp: new Date().toLocaleTimeString(),
+      analysisTimestamp: formatTimeString(),
       isSimulatedDemo: true,
     };
   }
@@ -373,7 +413,7 @@ export async function runMockRoadAnalysis(
     recommendation: "Preventive resurfacing",
     priority: "P2",
     confidence: 94.8,
-    analysisTimestamp: new Date().toLocaleTimeString(),
+    analysisTimestamp: formatTimeString(),
     isSimulatedDemo: true,
   };
 }

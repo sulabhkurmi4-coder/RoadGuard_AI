@@ -1,0 +1,92 @@
+# ==========================================
+# RoadGuard AI — Root .gitignore Configuration
+# ==========================================
+
+# ------------------------------------------
+# Python Virtual Environments
+# ------------------------------------------
+.venv/
+*/.venv/
+venv/
+backend/venv/
+frontend/.venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# ------------------------------------------
+# Python Bytecode & Cache
+# ------------------------------------------
+__pycache__/
+*/__pycache__/
+*/**/__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+
+# ------------------------------------------
+# Node.js & Dependencies
+# ------------------------------------------
+node_modules/
+*/node_modules/
+*/**/node_modules/
+.npm
+.yarn/cache
+.yarn/unplugged
+.pnp
+.pnp.*
+
+# ------------------------------------------
+# Next.js Build Outputs & Cache
+# ------------------------------------------
+.next/
+*/.next/
+*/**/.next/
+out/
+build/
+dist/
+.turbo/
+
+# ------------------------------------------
+# Environment Files & Secrets (Exclude actual secrets, allow examples)
+# ------------------------------------------
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+*.env
+*.env.local
+!*.env.example
+!.env.example
+
+# ------------------------------------------
+# Logs & Debugging
+# ------------------------------------------
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# ------------------------------------------
+# IDE & System Files
+# ------------------------------------------
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.vscode/
+.idea/
+*.pem
+
+# ------------------------------------------
+# Deployment & TypeScript Metadata
+# ------------------------------------------
+.vercel/
+*.tsbuildinfo
+next-env.d.ts
